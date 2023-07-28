@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/armon/go-metrics"
+	"github.com/hashicorp/go-metrics"
 )
 
 const (
@@ -406,6 +406,7 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 	for {
 		select {
 		case ready := <-respCh:
+			r.logger.Print("[INFO] Receive pipelined requests")
 			req, resp := ready.Request(), ready.Response()
 			appendStats(s.peer, ready.Start(), float32(len(req.Entries)))
 
@@ -424,6 +425,7 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 			}
 
 			// Update our replication state
+			r.logger.Print("[INFO] Update our replication state")
 			updateLastAppended(s, req)
 		case <-stopCh:
 			return

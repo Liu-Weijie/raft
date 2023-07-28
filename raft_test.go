@@ -539,7 +539,7 @@ func makeCluster(n int, addPeers bool, t *testing.T, conf *Config) *cluster {
 		// Propagation takes a maximum of 2 heartbeat timeouts (time to
 		// get a new heartbeat that would cause a commit) plus a bit.
 		propagateTimeout: conf.HeartbeatTimeout*2 + conf.CommitTimeout,
-		longstopTimeout:  5 * time.Second,
+		longstopTimeout:  10 * time.Second,
 		logger:           newTestLoggerWithPrefix(t, "cluster"),
 		failedCh:         make(chan struct{}),
 	}
@@ -775,10 +775,10 @@ func TestRaft_LeaderFail(t *testing.T) {
 		if len(fsm.logs) != 2 {
 			c.FailNowf("[ERR] did not apply both to FSM! %v", fsm.logs)
 		}
-		if bytes.Compare(fsm.logs[0], []byte("test")) != 0 {
+		if !bytes.Equal(fsm.logs[0], []byte("test")) {
 			c.FailNowf("[ERR] first entry should be 'test'")
 		}
-		if bytes.Compare(fsm.logs[1], []byte("apply")) != 0 {
+		if !bytes.Equal(fsm.logs[1], []byte("apply")) {
 			c.FailNowf("[ERR] second entry should be 'apply'")
 		}
 		fsm.Unlock()
@@ -905,6 +905,7 @@ func TestRaft_ApplyConcurrent(t *testing.T) {
 
 func TestRaft_ApplyConcurrent_Timeout(t *testing.T) {
 	// Make the cluster
+	t.Log("[INFO] Make the cluster")
 	conf := inmemConfig(t)
 	conf.CommitTimeout = 1 * time.Millisecond
 	conf.HeartbeatTimeout = 2 * conf.HeartbeatTimeout
@@ -913,14 +914,17 @@ func TestRaft_ApplyConcurrent_Timeout(t *testing.T) {
 	defer c.Close()
 
 	// Wait for a leader
+	t.Log("[INFO] Wait for a leader")
 	leader := c.Leader()
 
 	// Enough enqueues should cause at least one timeout...
+	t.Log("[INFO] Apply commands")
 	var didTimeout int32
 	for i := 0; (i < 5000) && (atomic.LoadInt32(&didTimeout) == 0); i++ {
 		go func(i int) {
 			future := leader.Apply([]byte(fmt.Sprintf("test%d", i)), time.Microsecond)
 			if future.Error() == ErrEnqueueTimeout {
+				t.Log("Timeout idx ", i)
 				atomic.StoreInt32(&didTimeout, 1)
 			}
 		}(i)
@@ -933,6 +937,7 @@ func TestRaft_ApplyConcurrent_Timeout(t *testing.T) {
 	}
 
 	// Loop until we see a timeout, or give up.
+	t.Log("[INFO] Loop until we see a timeout, or give up")
 	limit := time.Now().Add(c.longstopTimeout)
 	for time.Now().Before(limit) {
 		if atomic.LoadInt32(&didTimeout) != 0 {

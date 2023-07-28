@@ -666,7 +666,7 @@ func (r *Raft) runFollower() {
 
 			// Check if we have had a successful contact
 			lastContact := r.LastContact()
-			if time.Now().Sub(lastContact) < r.conf.HeartbeatTimeout {
+			if time.Since(lastContact) < r.conf.HeartbeatTimeout {
 				continue
 			}
 
@@ -913,6 +913,7 @@ func (r *Raft) leaderLoop() {
 
 		case <-r.leaderState.commitCh:
 			// Get the committed messages
+			r.logger.Print("[INFO] Get the committed messages")
 			committed := r.leaderState.inflight.Committed()
 			for e := committed.Front(); e != nil; e = e.Next() {
 				// Measure the commit time
@@ -922,6 +923,7 @@ func (r *Raft) leaderLoop() {
 				// Increment the commit index
 				idx := commitLog.log.Index
 				r.setCommitIndex(idx)
+				r.logger.Print("[INFO] Apply the logs")
 				r.processLogs(idx, commitLog)
 			}
 
@@ -948,6 +950,7 @@ func (r *Raft) leaderLoop() {
 
 		case newLog := <-r.applyCh:
 			// Group commit, gather all the ready commits
+			r.logger.Printf("[INFO] Leader: Receive apply command")
 			ready := []*logFuture{newLog}
 			for i := 0; i < r.conf.MaxAppendEntries; i++ {
 				select {
@@ -1145,6 +1148,7 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	}
 
 	// Write the log entry locally
+	r.logger.Printf("Write the log entry locally")
 	if err := r.logs.StoreLogs(logs); err != nil {
 		r.logger.Printf("[ERR] raft: Failed to commit logs: %v", err)
 		for _, applyLog := range applyLogs {
@@ -1161,6 +1165,7 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	r.setLastLog(lastIndex+uint64(len(applyLogs)), term)
 
 	// Notify the replicators of the new log
+	r.logger.Print("[INFO] Notify the replicators of the new log")
 	for _, f := range r.leaderState.replState {
 		asyncNotifyCh(f.triggerCh)
 	}
@@ -1486,7 +1491,7 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 	// Check if we've voted in this election before
 	if lastVoteTerm == req.Term && lastVoteCandBytes != nil {
 		r.logger.Printf("[INFO] raft: Duplicate RequestVote for same term: %d", req.Term)
-		if bytes.Compare(lastVoteCandBytes, req.Candidate) == 0 {
+		if bytes.Equal(lastVoteCandBytes, req.Candidate) {
 			r.logger.Printf("[WARN] raft: Duplicate RequestVote from candidate: %s", req.Candidate)
 			resp.Granted = true
 		}
